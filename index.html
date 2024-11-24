@@ -1,0 +1,450 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>AcctMgmt v0.0.1</title>
+    <style>
+        /* CSS styling to match Qortal UI themes */
+        body {
+            background-color: #000033; /* Dark blue background */
+            color: dodgerblue; /* Dodgerblue text color */
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+        }
+        h1, h2 {
+            text-align: center;
+            margin-top: 20px;
+        }
+        #current-node {
+            text-align: center;
+        }
+        #account-list {
+            margin: 20px auto;
+            width: 90%;
+            max-width: 800px;
+            text-align: left;
+        }
+        #account-list ul {
+            list-style-type: none;
+            padding: 0;
+        }
+        #account-list li {
+            background-color: #000044;
+            margin: 10px 0;
+            padding: 10px;
+            border: 1px solid dodgerblue;
+            border-radius: 5px;
+            display: flex;
+            align-items: center;
+            position: relative;
+        }
+        #account-list li img {
+            width: 50px;
+            height: 50px;
+            border-radius: 25px;
+            margin-right: 10px;
+        }
+        #account-list li .account-info {
+            flex-grow: 1;
+        }
+        #account-list li.managed {
+            border-color: green;
+        }
+        #account-list li.unmanaged {
+            border-color: red;
+        }
+        #buttons {
+            text-align: center;
+            margin-top: 20px;
+        }
+        button {
+            background-color: dodgerblue;
+            color: #fff;
+            border: none;
+            padding: 10px 15px;
+            font-size: 16px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover {
+            background-color: #1e90ff;
+        }
+        .highlight {
+            background-color: yellow;
+            color: black;
+        }
+        .remove-button {
+            background-color: transparent;
+            border: none;
+            color: red;
+            font-size: 20px;
+            font-weight: bold;
+            position: absolute;
+            top: 5px;
+            right: 10px;
+            cursor: pointer;
+        }
+        #add-account-form {
+            display: none;
+            text-align: center;
+            margin-top: 20px;
+        }
+        #add-account-form input {
+            padding: 10px;
+            font-size: 16px;
+            width: 300px;
+            border: 1px solid dodgerblue;
+            border-radius: 5px;
+        }
+        #message {
+            text-align: center;
+            margin-top: 20px;
+            color: red;
+        }
+    </style>
+</head>
+<body>
+
+    <h1>AcctMgmt v0.0.1</h1>
+    <h2>Qortal Account Manager</h2>
+    <p id="current-node"></p>
+
+    <div id="account-list">
+        <p id="no-accounts">No Managed Accounts</p>
+        <ul id="accounts-ul">
+            <!-- List of accounts will be displayed here -->
+        </ul>
+    </div>
+
+    <div id="buttons">
+        <button id="login-button">Login</button>
+        <button id="add-account-button">Add Account</button>
+        <button id="save-node-button" style="display:none;">Save to Node</button>
+        <button id="load-node-button">Load from Node</button>
+    </div>
+
+    <div id="add-account-form">
+        <input type="text" id="account-input" placeholder="Enter address or name">
+        <button id="submit-account-button">Submit</button>
+        <button id="cancel-account-button">Cancel</button>
+    </div>
+
+    <div id="message"></div>
+
+    <script>
+        let managedAccounts = [];
+        let originalManagedAccounts = [];
+        let loggedInAccount = null;
+
+        // Function to update the display of accounts
+        async function updateAccountList() {
+            const accountsUl = document.getElementById('accounts-ul');
+            accountsUl.innerHTML = '';
+
+            if (managedAccounts.length === 0 && !loggedInAccount) {
+                document.getElementById('no-accounts').style.display = 'block';
+                document.getElementById('save-node-button').style.display = 'none';
+            } else {
+                document.getElementById('no-accounts').style.display = 'none';
+                document.getElementById('save-node-button').style.display = 'inline-block';
+
+                // If user is logged in, display their account first
+                if (loggedInAccount) {
+                    const li = await createAccountListItem(loggedInAccount.address, true);
+                    accountsUl.appendChild(li);
+                }
+
+                for (let address of managedAccounts) {
+                    // Skip if it's the logged-in account (already displayed)
+                    if (loggedInAccount && address === loggedInAccount.address) continue;
+
+                    const li = await createAccountListItem(address, false);
+                    accountsUl.appendChild(li);
+                }
+            }
+            // Check if managedAccounts has changed compared to originalManagedAccounts
+            const accountsChanged = JSON.stringify(managedAccounts) !== JSON.stringify(originalManagedAccounts);
+            const saveButton = document.getElementById('save-node-button');
+            if (accountsChanged) {
+                saveButton.classList.add('highlight');
+            } else {
+                saveButton.classList.remove('highlight');
+            }
+        }
+
+        // Function to create account list item
+        async function createAccountListItem(address, isLoggedInUser) {
+            const li = document.createElement('li');
+            li.classList.add('account-item');
+            const avatarImg = document.createElement('img');
+            avatarImg.src = ''; // Placeholder
+            avatarImg.alt = 'Avatar';
+            const accountInfoDiv = document.createElement('div');
+            accountInfoDiv.classList.add('account-info');
+            try {
+                // Fetch account data
+                let accountData;
+                try {
+                    console.log(`Fetching account data for address: ${address}`);
+                    accountData = await qortalRequest({
+                        action: "GET_ACCOUNT_DATA",
+                        address: address
+                    });
+                    console.log(`Account data for ${address}:`, accountData);
+                } catch (error) {
+                    throw new Error(`Failed to get account data: ${error.message || JSON.stringify(error)}`);
+                }
+                // Fetch balance
+                let balance;
+                try {
+                    console.log(`Fetching balance for address: ${address}`);
+                    balance = await qortalRequest({
+                        action: "GET_BALANCE",
+                        address: address
+                    });
+                    console.log(`Balance for ${address}:`, balance);
+                } catch (error) {
+                    throw new Error(`Failed to get balance: ${error.message || JSON.stringify(error)}`);
+                }
+                // Fetch name data
+                let nameData = null;
+                try {
+                    console.log(`Fetching account names for address: ${address}`);
+                    const names = await qortalRequest({
+                        action: "GET_ACCOUNT_NAMES",
+                        address: address
+                    });
+                    console.log(`Names for ${address}:`, names);
+                    if (names && names.length > 0) {
+                        console.log(`Fetching name data for name: ${names[0]}`);
+                        nameData = await qortalRequest({
+                            action: "GET_NAME_DATA",
+                            name: names[0].name
+                        });
+                        console.log(`Name data for ${names[0]}:`, nameData);
+                    }
+                } catch (error) {
+                    console.warn(`No name data for address ${address}: ${error.message || JSON.stringify(error)}`);
+                }
+                // Set avatar
+                let avatarUrl = '';
+                if (nameData) {
+                    // Attempt to fetch avatar
+                    avatarUrl = `/arbitrary/THUMBNAIL/${nameData.name}/qortal_avatar`;
+                    avatarImg.src = avatarUrl;
+                    avatarImg.onerror = function () {
+                        avatarImg.src = ''; // Fallback to empty if image doesn't load
+                    };
+                }
+                // Build account info HTML
+                let accountInfoHtml = '';
+                if (nameData) {
+                    accountInfoHtml += `<strong>Name:</strong> ${nameData.name} (${nameData.reducedName})<br>`;
+                    accountInfoHtml += `<strong>Data:</strong> ${nameData.data}<br>`;
+                    accountInfoHtml += `<strong>Registered:</strong> ${new Date(nameData.registered).toLocaleString()}<br>`;
+                    accountInfoHtml += `<strong>Updated:</strong> ${new Date(nameData.updated).toLocaleString()}<br>`;
+                    accountInfoHtml += `<strong>For Sale:</strong> ${nameData.isForSale ? 'Yes' : 'No'}<br>`;
+                    if (nameData.isForSale) {
+                        accountInfoHtml += `<strong>Sale Price:</strong> ${nameData.salePrice}<br>`;
+                    }
+                }
+                accountInfoHtml += `<strong>Address:</strong> ${address}<br>`;
+                accountInfoHtml += `<strong>Public Key:</strong> ${accountData.publicKey}<br>`;
+                accountInfoHtml += `<strong>Balance:</strong> ${balance}<br>`;
+                accountInfoHtml += `<strong>Level:</strong> ${accountData.level}<br>`;
+                accountInfoHtml += `<strong>Blocks Minted:</strong> ${accountData.blocksMinted}<br>`;
+                accountInfoHtml += `<strong>Founder:</strong> ${accountData.flags === 1 ? 'Yes' : 'No'}<br>`;
+                if (isLoggedInUser) {
+                    if (managedAccounts.includes(address)) {
+                        li.classList.add('managed');
+                        accountInfoHtml += `<strong>Status:</strong> Managed Account (Logged In)<br>`;
+                    } else {
+                        li.classList.add('unmanaged');
+                        accountInfoHtml += `<strong>Status:</strong> Unmanaged Account (Logged In)<br>`;
+                    }
+                }
+                accountInfoDiv.innerHTML = accountInfoHtml;
+            } catch (error) {
+                console.error(error);
+                accountInfoDiv.textContent = `${address} - Error fetching data: ${error.message || JSON.stringify(error)}`;
+            }
+            li.appendChild(avatarImg);
+            li.appendChild(accountInfoDiv);
+            // Create remove button if the account is in managedAccounts
+            if (managedAccounts.includes(address)) {
+                const removeButton = document.createElement('button');
+                removeButton.textContent = 'X';
+                removeButton.classList.add('remove-button');
+                removeButton.addEventListener('click', function (event) {
+                    // Prevent event from bubbling up
+                    event.stopPropagation();
+                    // Remove the account from managedAccounts
+                    managedAccounts = managedAccounts.filter(acc => acc !== address);
+                    updateAccountList();
+                });
+                li.appendChild(removeButton);
+            }
+            return li;
+        }
+
+        // Function to show the add account form
+        function showAddAccountForm() {
+            document.getElementById('add-account-form').style.display = 'block';
+            document.getElementById('add-account-button').style.display = 'none';
+            document.getElementById('save-node-button').style.display = 'none';
+            document.getElementById('message').textContent = '';
+        }
+
+        // Function to hide the add account form
+        function hideAddAccountForm() {
+            document.getElementById('add-account-form').style.display = 'none';
+            document.getElementById('add-account-button').style.display = 'inline-block';
+            if (managedAccounts.length > 0 || loggedInAccount) {
+                document.getElementById('save-node-button').style.display = 'inline-block';
+            }
+            document.getElementById('account-input').value = '';
+            document.getElementById('message').textContent = '';
+        }
+
+        // Function to add an account
+        async function addAccount() {
+            const input = document.getElementById('account-input').value.trim();
+            if (!input) {
+                document.getElementById('message').textContent = 'Please enter an address or name.';
+                return;
+            }
+
+            let address = '';
+
+            // First, check if input is a valid address
+            try {
+                const validateResponse = await fetch(`/addresses/validate/${input}`);
+                const isValidAddress = await validateResponse.json();
+
+                if (isValidAddress) {
+                    address = input;
+                } else {
+                    // Check if input is a registered name
+                    try {
+                        const nameData = await qortalRequest({
+                            action: "GET_NAME_DATA",
+                            name: input
+                        });
+                        address = nameData.owner;
+                    } catch (error) {
+                        document.getElementById('message').textContent = 'Invalid address or name.';
+                        return;
+                    }
+                }
+
+                // Check if the address is already in the list
+                if (managedAccounts.includes(address)) {
+                    document.getElementById('message').textContent = 'Account already in the list.';
+                    return;
+                }
+
+                managedAccounts.push(address);
+                updateAccountList();
+                hideAddAccountForm();
+
+            } catch (error) {
+                console.error(error);
+                document.getElementById('message').textContent = 'Error validating address or name.';
+            }
+        }
+
+        // Function to save managedAccounts to node
+        async function saveToNode() {
+            try {
+                // Remove existing list items
+                const existingItems = await qortalRequest({
+                    action: "GET_LIST_ITEMS",
+                    list_name: "managedAccounts"
+                });
+                if (Array.isArray(existingItems) && existingItems.length > 0) {
+                    for (let item of existingItems) {
+                        await qortalRequest({
+                            action: "DELETE_LIST_ITEM",
+                            list_name: "managedAccounts",
+                            item: item
+                        });
+                    }
+                }
+
+                // Add new items
+                const response = await qortalRequest({
+                    action: "ADD_LIST_ITEMS",
+                    list_name: "managedAccounts",
+                    items: managedAccounts
+                });
+                if (response === true) {
+                    document.getElementById('message').textContent = 'Accounts saved to node.';
+                } else {
+                    document.getElementById('message').textContent = 'Failed to save accounts.';
+                }
+            } catch (error) {
+                console.error(error);
+                document.getElementById('message').textContent = 'Error saving accounts to node.';
+            }
+        }
+
+        // Function to load managedAccounts from node
+        async function loadManagedAccounts() {
+            try {
+                const response = await qortalRequest({
+                    action: "GET_LIST_ITEMS",
+                    list_name: "managedAccounts"
+                });
+                if (Array.isArray(response)) {
+                    managedAccounts = response;
+                    originalManagedAccounts = [...managedAccounts];
+                    // Store the original list
+                    updateAccountList();
+                } else {
+                    // No managedAccounts list exists
+                    managedAccounts = [];
+                    originalManagedAccounts = [];
+                    updateAccountList();
+                }
+            } catch (error) {
+                console.error(error);
+                // No managedAccounts list exists or error occurred
+                managedAccounts = [];
+                originalManagedAccounts = [];
+                updateAccountList();
+            }
+        }
+
+        // Function to login and get current user account
+        async function login() {
+            try {
+                const account = await qortalRequest({
+                    action: "GET_USER_ACCOUNT"
+                });
+                loggedInAccount = account;
+                updateAccountList();
+            } catch (error) {
+                console.error(error);
+                document.getElementById('message').textContent = 'Error logging in.';
+            }
+        }
+
+        // Event listeners
+        document.getElementById('add-account-button').addEventListener('click', showAddAccountForm);
+        document.getElementById('cancel-account-button').addEventListener('click', hideAddAccountForm);
+        document.getElementById('submit-account-button').addEventListener('click', addAccount);
+        document.getElementById('save-node-button').addEventListener('click', saveToNode);
+        document.getElementById('load-node-button').addEventListener('click', loadManagedAccounts);
+        document.getElementById('login-button').addEventListener('click', login);
+
+        // On page load, load managedAccounts from node & set the current node
+        window.addEventListener('load', () => {
+            loadManagedAccounts();
+            document.getElementById('current-node').textContent = 'Current Node: ' + window.location.host;
+        });
+
+    </script>
+
+</body>
+</html>
