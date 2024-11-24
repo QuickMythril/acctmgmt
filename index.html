@@ -1,13 +1,18 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>AcctMgmt v0.0.1</title>
+    <title>AcctMgmt v0.0.2</title>
+    <link rel="icon" type="image/png" href="acctmgmt.png">
     <style>
         /* CSS styling to match Qortal UI themes */
+        @font-face {
+            font-family: 'Lexend';
+            src: url('Lexend-Regular.ttf');
+        }
         body {
             background-color: #000033; /* Dark blue background */
             color: dodgerblue; /* Dodgerblue text color */
-            font-family: Arial, sans-serif;
+            font-family: 'Lexend', sans-serif;
             margin: 0;
             padding: 0;
         }
@@ -106,7 +111,7 @@
 </head>
 <body>
 
-    <h1>AcctMgmt v0.0.1</h1>
+    <h1>AcctMgmt v0.0.2</h1>
     <h2>Qortal Account Manager</h2>
     <p id="current-node"></p>
 
@@ -263,6 +268,74 @@
                         li.classList.add('unmanaged');
                         accountInfoHtml += `<strong>Status:</strong> Unmanaged Account (Logged In)<br>`;
                     }
+                }
+                // Fetch last payment received
+                try {
+                    console.log(`Fetching last payment for address: ${address}`);
+                    const paymentResponse = await fetch(`/transactions/search?txType=PAYMENT&address=${address}&confirmationStatus=CONFIRMED&limit=1&reverse=true`);
+                    const payments = await paymentResponse.json();
+                    console.log(`Last payment data for ${address}:`, payments);
+                    if (payments && payments.length > 0) {
+                        const lastPayment = payments[0];
+                        const paymentDate = new Date(lastPayment.timestamp).toLocaleString();
+                        const sender = lastPayment.creatorAddress;
+                        const amount = lastPayment.amount;
+                        accountInfoHtml += `<strong>Last Payment Received:</strong> ${paymentDate} from ${sender}, Amount: ${amount}<br>`;
+                    } else {
+                        accountInfoHtml += `<strong>Last Payment Received:</strong> None<br>`;
+                    }
+                } catch (error) {
+                    console.error('Error fetching last payment:', error);
+                    accountInfoHtml += `<strong>Last Payment Received:</strong> Error fetching data<br>`;
+                }
+                // Fetch last Q-Mail received
+                if (nameData) {
+                    try {
+                        console.log(`Fetching last Q-Mail for name: ${nameData.name}`);
+                        const qmailResponse = await fetch(`/arbitrary/resources/search?service=MAIL_PRIVATE&identifier=qmail_${nameData.name}&mode=ALL&limit=1&reverse=true`);
+                        const qmailData = await qmailResponse.json();
+                        console.log(`Last Q-Mail data for ${nameData.name}:`, qmailData);
+                        if (qmailData && qmailData.length > 0) {
+                            const lastQmail = qmailData[0];
+                            const qmailDate = new Date(lastQmail.created).toLocaleString();
+                            const sender = lastQmail.name;
+                            accountInfoHtml += `<strong>Last Q-Mail Received:</strong> ${qmailDate} from ${sender}<br>`;
+                        } else {
+                            accountInfoHtml += `<strong>Last Q-Mail Received:</strong> None<br>`;
+                        }
+                    } catch (error) {
+                        console.error('Error fetching last Q-Mail:', error);
+                        accountInfoHtml += `<strong>Last Q-Mail Received:</strong> Error fetching data<br>`;
+                    }
+                } else {
+                    accountInfoHtml += `<strong>Last Q-Mail Received:</strong> Account has no registered name<br>`;
+                }
+                // Fetch recent private messages (within last 24 hours)
+                try {
+                    console.log(`Fetching active chats for address: ${address}`);
+                    const chatResponse = await fetch(`/chat/active/${address}`);
+                    const chatData = await chatResponse.json();
+                    console.log(`Active chat data for ${address}:`, chatData);
+                    if (chatData && chatData.direct && chatData.direct.length > 0) {
+                        const now = Date.now();
+                        const oneDay = 24 * 60 * 60 * 1000;
+                        const recentMessages = chatData.direct.filter(msg => (now - msg.timestamp) <= oneDay);
+                        if (recentMessages.length > 0) {
+                            accountInfoHtml += `<strong>Recent Private Messages:</strong><br>`;
+                            recentMessages.forEach(msg => {
+                                const msgDate = new Date(msg.timestamp).toLocaleString();
+                                const sender = msg.senderName || msg.sender;
+                                accountInfoHtml += `&nbsp;&nbsp;${msgDate} from ${sender}<br>`;
+                            });
+                        } else {
+                            accountInfoHtml += `<strong>Recent Private Messages:</strong> None<br>`;
+                        }
+                    } else {
+                        accountInfoHtml += `<strong>Recent Private Messages:</strong> None<br>`;
+                    }
+                } catch (error) {
+                    console.error('Error fetching private messages:', error);
+                    accountInfoHtml += `<strong>Recent Private Messages:</strong> Error fetching data<br>`;
                 }
                 accountInfoDiv.innerHTML = accountInfoHtml;
             } catch (error) {
